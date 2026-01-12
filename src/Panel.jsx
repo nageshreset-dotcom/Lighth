@@ -668,6 +668,91 @@ function ActivityTab({ logs }) {
   );
 }
 
+function DebuggerTab({ serverId, onLog }) {
+  const [plugins, setPlugins] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [pluginName, setPluginName] = useState('');
+
+  useEffect(() => {
+    setLoading(true);
+    import('./mockServerApi').then(api => {
+      api.getPlugins(serverId).then(p => {
+        setPlugins(p);
+        setLoading(false);
+      }).catch(e => {
+        onLog('Failed to load plugins');
+        setLoading(false);
+      });
+    });
+  }, [serverId, onLog]);
+
+  async function installPlug() {
+    if (!pluginName.trim()) return;
+    setLoading(true);
+    onLog(`Installing plugin: ${pluginName}...`);
+    try {
+      const res = await import('./mockServerApi').then(api => api.installPlugin(serverId, pluginName));
+      if (res.ok) {
+        setPlugins(p => [...p, res.plugin]);
+        onLog(`Plugin installed: ${pluginName}`);
+        setPluginName('');
+      }
+    } catch (e) {
+      onLog('Installation failed');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function removePlug(pname) {
+    setLoading(true);
+    onLog(`Uninstalling plugin: ${pname}...`);
+    try {
+      const res = await import('./mockServerApi').then(api => api.uninstallPlugin(serverId, pname));
+      if (res.ok) {
+        setPlugins(p => p.filter(x => x.name !== pname));
+        onLog(`Plugin removed: ${pname}`);
+      }
+    } catch (e) {
+      onLog('Uninstall failed');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="tab-content">
+      <h3 style={{ marginTop: 0 }}>Minecraft Debugger & Plugin Manager</h3>
+      <div style={{ marginBottom: 20 }}>
+        <h4>Install Plugin</h4>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input value={pluginName} onChange={(e) => setPluginName(e.target.value)} placeholder="Plugin name (e.g., WorldGuard)" />
+          <button className="btn primary" onClick={installPlug}>{loading ? 'Installing…' : 'Install'}</button>
+        </div>
+      </div>
+
+      <div>
+        <h4>Installed Plugins</h4>
+        {plugins.length === 0 ? (
+          <div className="muted">No plugins installed</div>
+        ) : (
+          <div style={{ display: 'grid', gap: 8 }}>
+            {plugins.map((p) => (
+              <div key={p.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '8px' }}>
+                <div>
+                  <div style={{ fontWeight: 700 }}>{p.name}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{p.version} — {p.status}</div>
+                </div>
+                <button className="btn" onClick={() => removePlug(p.name)}>Remove</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Panel({ serverId = 'demo' }) {
   const [tab, setTab] = useState('console-general');
   const [name, setName] = useState('My Server');
@@ -907,6 +992,9 @@ export default function Panel({ serverId = 'demo' }) {
             </button>
             <button className={`nav-item ${tab==='settings-general' ? 'active' : ''}`} onClick={() => setTab('settings-general')}>
               <GearIcon className="nav-icon" /><span className="label">Settings</span>
+            </button>
+            <button className={`nav-item ${tab==='debugger' ? 'active' : ''}`} onClick={() => setTab('debugger')}>
+              <MicrochipIcon className="nav-icon" /><span className="label">Debugger</span>
             </button>
           </div>
 

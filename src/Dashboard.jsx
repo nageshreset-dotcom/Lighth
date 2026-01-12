@@ -1,19 +1,21 @@
 import { useState, useEffect } from 'react';
 import './Dashboard.css';
 import * as api from './mockServerApi';
+import Toasts from './Toast';
 
 export default function Dashboard() {
   const [servers, setServers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ totalServers: 0, totalPlayers: 0, onlineServers: 0 });
   const [createOpen, setCreateOpen] = useState(false);
-  const [form, setForm] = useState({ name: '', ram: '2GB', storage: '5GB', players: 10, eulaAccepted: false, edition: 'java', serverType: 'vanilla' });
+  const [form, setForm] = useState({ name: '', ram: '2GB', storage: '5GB', players: 10, edition: 'java', serverType: 'vanilla', version: '1.20.1' });
   const [manageOpen, setManageOpen] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [editForm, setEditForm] = useState({ name: '', ram: '2GB', storage: '5GB', players: 10, eulaAccepted: false, edition: 'java', serverType: 'vanilla' });
+  const [editForm, setEditForm] = useState({ name: '', ram: '2GB', storage: '5GB', players: 10, edition: 'java', serverType: 'vanilla', version: '1.20.1' });
   const [createLoading, setCreateLoading] = useState(false);
   const [editingLoading, setEditingLoading] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
+  const [confirmDeletingId, setConfirmDeletingId] = useState(null);
   const [toasts, setToasts] = useState([]);
 
   useEffect(() => {
@@ -34,7 +36,7 @@ export default function Dashboard() {
   }, []);
 
   function openCreate() {
-    setForm({ name: '', ram: '2GB', storage: '5GB', players: 10, eulaAccepted: false, edition: 'java', serverType: 'vanilla' });
+    setForm({ name: '', ram: '2GB', storage: '5GB', players: 10, edition: 'java', serverType: 'vanilla', version: '1.20.1' });
     setCreateOpen(true);
   }
 
@@ -53,10 +55,6 @@ export default function Dashboard() {
 
   async function handleCreate(e) {
     e.preventDefault();
-    if (!form.eulaAccepted) {
-      addToast('You must accept the EULA to create a server', 'error');
-      return;
-    }
     setCreateLoading(true);
     const payload = {
       name: form.name || `server-${Date.now()}`,
@@ -64,7 +62,9 @@ export default function Dashboard() {
       storage: form.storage,
       players: Number(form.players) || 0,
       status: 'provisioning',
-      eulaAccepted: !!form.eulaAccepted
+      edition: form.edition,
+      serverType: form.serverType,
+      version: form.version
     };
     try {
       const s = await api.createServer(payload);
@@ -109,7 +109,7 @@ export default function Dashboard() {
   async function applyEdit(e) {
     e.preventDefault();
     setEditingLoading(true);
-    const payload = { name: editForm.name, ram: editForm.ram, storage: editForm.storage, players: Number(editForm.players), eulaAccepted: !!editForm.eulaAccepted };
+    const payload = { name: editForm.name, ram: editForm.ram, storage: editForm.storage, players: Number(editForm.players), edition: editForm.edition, serverType: editForm.serverType, version: editForm.version };
     try {
       const res = await api.updateServer(editing, payload);
       if (res.ok) {
@@ -137,6 +137,32 @@ export default function Dashboard() {
       addToast('Delete failed', 'error');
     } finally {
       setDeletingId(null);
+    }
+  }
+
+  function requestDelete(id) {
+    setConfirmDeletingId(id);
+  }
+
+  function cancelDelete() {
+    setConfirmDeletingId(null);
+  }
+
+  async function confirmDelete() {
+    if (!confirmDeletingId) return;
+    const id = confirmDeletingId;
+    setDeletingId(id);
+    try {
+      await api.deleteServer(id);
+      setServers((list) => list.filter((s) => s.id !== id));
+      setStats((st) => ({ ...st, totalServers: Math.max(0, st.totalServers - 1) }));
+      addToast('Server deleted', 'success');
+    } catch (err) {
+      console.error('confirm delete failed', err);
+      addToast('Delete failed', 'error');
+    } finally {
+      setDeletingId(null);
+      setConfirmDeletingId(null);
     }
   }
 
@@ -239,10 +265,59 @@ export default function Dashboard() {
                     )}
                   </select>
                 </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <input type="checkbox" checked={form.eulaAccepted} onChange={(e) => updateField('eulaAccepted', e.target.checked)} />
-                  <span style={{ color: 'var(--text-secondary)', fontSize: 14 }}>I accept the Minecraft EULA (required)</span>
+                <label>
+                  Version
+                  <select value={form.version} onChange={(e) => updateField('version', e.target.value)}>
+                    {/* Simple version sets per type */}
+                    {form.serverType === 'vanilla' && (
+                      <>
+                        <option>1.20.1</option>
+                        <option>1.19.4</option>
+                        <option>1.18.2</option>
+                        <option>1.17.1</option>
+                        <option>1.8.9</option>
+                      </>
+                    )}
+                    {form.serverType === 'snapshot' && (
+                      <>
+                        <option>23w45a</option>
+                        <option>22w14a</option>
+                      </>
+                    )}
+                    {(form.serverType === 'paper' || form.serverType === 'spigot' || form.serverType === 'purpur' || form.serverType === 'glowstone' || form.serverType === 'arclight') && (
+                      <>
+                        <option>1.20.1</option>
+                        <option>1.19.4</option>
+                        <option>1.18.2</option>
+                      </>
+                    )}
+                    {(form.serverType === 'fabric' || form.serverType === 'quilt' || form.serverType === 'neoforge' || form.serverType === 'forge' || form.serverType === 'modpack') && (
+                      <>
+                        <option>1.20.1</option>
+                        <option>1.19.4</option>
+                        <option>1.18.2</option>
+                      </>
+                    )}
+                    {form.serverType === 'bedrock' && (
+                      <>
+                        <option>1.20.0</option>
+                        <option>1.19.70</option>
+                      </>
+                    )}
+                    {form.serverType === 'bedrock-preview' && (
+                      <>
+                        <option>preview</option>
+                      </>
+                    )}
+                    {form.serverType === 'pocketmine' && (
+                      <>
+                        <option>4.0.0</option>
+                        <option>3.0.0</option>
+                      </>
+                    )}
+                  </select>
                 </label>
+                {/* EULA acceptance moved to panel start flow */}
                 <label>
                   RAM
                   <select value={form.ram} onChange={(e) => updateField('ram', e.target.value)}>
@@ -281,11 +356,7 @@ export default function Dashboard() {
               </header>
               <div className="modal-body">
                 {/* Toasts */}
-                <div className="toasts-ctn" aria-hidden>
-                  {toasts.map(t => (
-                    <div key={t.id} className={`toast toast-${t.kind}`}>{t.message}</div>
-                  ))}
-                </div>
+                <Toasts toasts={toasts} className="toasts-ctn" />
                 {servers.length === 0 ? (
                   <div style={{ color: 'var(--text-secondary)' }}>No servers available.</div>
                 ) : (
@@ -298,7 +369,14 @@ export default function Dashboard() {
                         </div>
                         <div style={{ display: 'flex', gap: 8 }}>
                           <button className="btn" onClick={() => startEdit(s)}>Edit</button>
-                          <button className="btn" onClick={() => removeServer(s.id)}>{deletingId === s.id ? 'Deleting…' : 'Delete'}</button>
+                          {confirmDeletingId === s.id ? (
+                            <div style={{ display: 'flex', gap: 8 }}>
+                              <button className="btn danger" onClick={confirmDelete}>{deletingId === s.id ? 'Deleting…' : 'Confirm Delete'}</button>
+                              <button className="btn" onClick={cancelDelete}>Cancel</button>
+                            </div>
+                          ) : (
+                            <button className="btn" onClick={() => requestDelete(s.id)}>Delete</button>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -345,9 +423,38 @@ export default function Dashboard() {
                       )}
                     </select>
                   </label>                    <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <input type="checkbox" checked={editForm.eulaAccepted} onChange={(e) => updateEditField('eulaAccepted', e.target.checked)} />
-                      <span style={{ color: 'var(--text-secondary)', fontSize: 13 }}>EULA accepted</span>
+                      
                     </label>
+                  <label>
+                    Version
+                    <select value={editForm.version} onChange={(e) => updateEditField('version', e.target.value)}>
+                      {editForm.serverType === 'vanilla' && (
+                        <>
+                          <option>1.20.1</option>
+                          <option>1.19.4</option>
+                          <option>1.18.2</option>
+                        </>
+                      )}
+                      {editForm.serverType === 'snapshot' && (
+                        <>
+                          <option>23w45a</option>
+                          <option>22w14a</option>
+                        </>
+                      )}
+                      {(editForm.serverType === 'paper' || editForm.serverType === 'spigot' || editForm.serverType === 'purpur' || editForm.serverType === 'glowstone' || editForm.serverType === 'arclight') && (
+                        <>
+                          <option>1.20.1</option>
+                          <option>1.19.4</option>
+                        </>
+                      )}
+                      {(editForm.serverType === 'fabric' || editForm.serverType === 'quilt' || editForm.serverType === 'neoforge' || editForm.serverType === 'forge' || editForm.serverType === 'modpack') && (
+                        <>
+                          <option>1.20.1</option>
+                          <option>1.19.4</option>
+                        </>
+                      )}
+                    </select>
+                  </label>
                     <label>
                       RAM
                       <select value={editForm.ram} onChange={(e) => updateEditField('ram', e.target.value)}>

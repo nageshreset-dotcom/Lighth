@@ -1,6 +1,8 @@
 import { useEffect, useState, useRef } from 'react';
 import './Panel.css';
+import Toasts from './Toast';
 import { startServer, stopServer, restartServer, execCommand } from './serverApi';
+import * as mockApi from './mockServerApi';
 import {
   TerminalIcon,
   FolderIcon,
@@ -760,8 +762,11 @@ export default function Panel({ serverId = 'demo' }) {
   const [ip, setIp] = useState(null);
   const [port] = useState(25565);
   const [selectedVersion, setSelectedVersion] = useState('1.20.1');
+  const [edition, setEdition] = useState('java');
+  const [serverType, setServerType] = useState('vanilla');
   const [isProcessing, setIsProcessing] = useState(false);
   const [toasts, setToasts] = useState([]);
+  const [showEulaModal, setShowEulaModal] = useState(false);
 
   function addToast(message, kind = 'info') {
     const id = Date.now() + Math.random();
@@ -786,6 +791,25 @@ export default function Panel({ serverId = 'demo' }) {
     setLogs([`${new Date().toLocaleTimeString()}: Panel ready`]);
   }, []);
 
+  // load server metadata when panel mounts or serverId changes
+  useEffect(() => {
+    let mounted = true;
+    mockApi.fetchServers().then((list) => {
+      if (!mounted) return;
+      const s = list.find(x => x.id === serverId);
+      if (s) {
+        setName(s.name || name);
+        setStatus(s.status || status);
+        setSelectedVersion(s.version || selectedVersion);
+        setEdition(s.edition || 'java');
+        setServerType(s.serverType || 'vanilla');
+        if (s.domain) setDomain(s.domain);
+        if (s.playAddr) setPlayAddr(s.playAddr);
+      }
+    }).catch(() => {});
+    return () => { mounted = false; };
+  }, [serverId]);
+
   useEffect(() => {
     try { document.body.classList.add('force-desktop'); } catch (e) { }
   }, []);
@@ -806,14 +830,16 @@ export default function Panel({ serverId = 'demo' }) {
 
   async function handleCreate(e) {
     if (e && e.preventDefault) e.preventDefault();
-    const accepted = window.confirm('Do you accept the EULA? Click OK to accept.');
-    if (!accepted) {
-      appendLog('EULA not accepted; start cancelled');
+    // require EULA acceptance at start if not already accepted on server
+    const servers = await mockApi.fetchServers();
+    const s = servers.find(x => x.id === serverId) || {};
+    if (!s.eulaAccepted) {
+      setShowEulaModal(true);
       return;
     }
 
+    // proceed to start
     setStatus('starting');
-    appendLog(`EULA accepted`);
     appendLog(`Downloading Minecraft version ${selectedVersion}...`);
     setIp(null);
 
@@ -823,7 +849,6 @@ export default function Panel({ serverId = 'demo' }) {
       appendLog(`Downloaded Minecraft version ${res.version}`);
       const generatedIp = randomIp();
       setIp(generatedIp);
-      // derive domain and play address from server name (username)
       const user = (name || 'yourusername').toString().trim().toLowerCase().replace(/[^a-z0-9\-]/g, '') || 'yourusername';
       setDomain(`${user}.lighthost.serv.net`);
       setPlayAddr(`play.${user}.shulkercraft.com`);
@@ -883,6 +908,18 @@ export default function Panel({ serverId = 'demo' }) {
     } catch (e) {
       addToast('Copy failed', 'error');
     }
+  }
+
+  function acceptEulaAndStart() {
+    // mark server as EULA accepted then start
+    mockApi.updateServer(serverId, { eulaAccepted: true }).then(() => {
+      setShowEulaModal(false);
+      appendLog('EULA accepted');
+      // now start
+      handleCreate();
+    }).catch(() => {
+      addToast('Failed to accept EULA', 'error');
+    });
   }
 
   function downloadFile(file) {
@@ -967,11 +1004,7 @@ export default function Panel({ serverId = 'demo' }) {
 
   return (
     <div className="panel-root">
-      <div className="toast-container">
-        {toasts.map((t) => (
-          <div key={t.id} className={`toast ${t.kind || 'info'}`}>{t.message}</div>
-        ))}
-      </div>
+      <Toasts toasts={toasts} />
       <div className="panel-card">
         <div className="panel-header top">
           <div className="top-nav">
@@ -1002,6 +1035,7 @@ export default function Panel({ serverId = 'demo' }) {
             <div className={`status-badge ${status==='online'?'online':''}`}>{status==='online'?'ONLINE':status.toUpperCase()}</div>
             <div className="server-box">
               <div className="server-domain">{domain || `${(name||'yourusername').toLowerCase()}.lighthost.serv.net`}</div>
+              <div className="server-meta" style={{ fontSize: 12, color: 'var(--text-secondary)', marginLeft: 12 }}>{serverType} • {selectedVersion}</div>
               <button className="copy-btn" onClick={copyPlayAddr} title="Copy play address"><ClipboardIcon /></button>
             </div>
             <div className="action-buttons">
@@ -1065,6 +1099,7 @@ export default function Panel({ serverId = 'demo' }) {
               {tab === 'settings-users' && <UsersTab />}
               {tab === 'settings-startup' && <StartupTab />}
               {tab === 'settings-activity' && <ActivityTab logs={logs} />}
+              {tab === 'debugger' && <DebuggerTab serverId={serverId} onLog={appendLog} />}
             </div>
           </div>
         </div>

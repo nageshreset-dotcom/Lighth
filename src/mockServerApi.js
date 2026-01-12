@@ -13,6 +13,7 @@ export async function fetchServers() {
   return servers.slice();
 }
 
+// Only allow manual server creation via UI (function kept for manual use)
 export async function createServer(data) {
   await wait(800 + Math.random() * 600);
   const s = { id: `srv-${Date.now()}`, status: 'provisioning', ...data };

@@ -1,0 +1,7 @@
+{
+  "default_model": "claude-haiku-4.5",
+  "enabled_for_all_clients": true,
+  "runtime_env_var": "DEFAULT_AI_MODEL",
+  "description": "Enables Claude Haiku 4.5 as the global default model for all clients. Set the runtime environment variable or per-client config to override.",
+  "rollback": "Set \"enabled_for_all_clients\" to false or change \"default_model\" to the previous model name."
+}

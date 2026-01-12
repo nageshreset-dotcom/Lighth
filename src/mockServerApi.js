@@ -1,8 +1,6 @@
 // Simple client-side mock API that simulates network latency
-const servers = [
-  { id: 'srv-1', name: 'Survival', ram: '8G', storage: '16G', players: 'unlimited', status: 'online' },
-  { id: 'srv-2', name: 'Creative', ram: '8G', storage: '16G', players: 'unlimited', status: 'stopped' },
-];
+// Start with no pre-created servers — require manual creation via UI
+const servers = [];
 
 function wait(ms) {
   return new Promise((res) => setTimeout(res, ms));

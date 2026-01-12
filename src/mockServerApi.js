@@ -26,6 +26,34 @@ export async function deleteServer(id) {
   return { ok: true };
 }
 
+export async function updateServer(id, data) {
+  await wait(200 + Math.random() * 300);
+  const s = servers.find((x) => x.id === id);
+  if (!s) return { ok: false, error: 'not found' };
+  Object.assign(s, data);
+  return { ok: true, server: s };
+}
+
+export async function getPlugins(id) {
+  await wait(300 + Math.random() * 200);
+  const defaultPlugins = [
+    { name: 'EssentialsX', version: '2.19.0', status: 'enabled' },
+    { name: 'WorldEdit', version: '7.2.12', status: 'enabled' },
+    { name: 'CoreProtect', version: '20.5', status: 'disabled' }
+  ];
+  return defaultPlugins;
+}
+
+export async function installPlugin(id, pluginName) {
+  await wait(500 + Math.random() * 800);
+  return { ok: true, plugin: { name: pluginName, version: '1.0', status: 'enabled' } };
+}
+
+export async function uninstallPlugin(id, pluginName) {
+  await wait(300 + Math.random() * 400);
+  return { ok: true };
+}
+
 export async function startServer(id, version = '1.20.1') {
   await wait(600 + Math.random() * 500);
   const s = servers.find((x) => x.id === id) || servers[0];
@@ -81,4 +109,4 @@ export async function execCommand(id, cmd) {
   return { ok: true, output: `Executed: ${normalized}` };
 }
 
-export default { fetchServers, createServer, deleteServer, startServer, stopServer, restartServer, execCommand };
+export default { fetchServers, createServer, deleteServer, updateServer, getPlugins, installPlugin, uninstallPlugin, startServer, stopServer, restartServer, execCommand };

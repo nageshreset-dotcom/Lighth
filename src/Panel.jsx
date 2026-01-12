@@ -1,20 +1,115 @@
 import { useEffect, useState, useRef } from 'react';
 import './Panel.css';
+import { startServer, stopServer, restartServer, execCommand } from './serverApi';
+import {
+  TerminalIcon,
+  FolderIcon,
+  SlidersIcon,
+  GlobeIcon,
+  PuzzleIcon,
+  GearIcon,
+  MicrochipIcon,
+  RamIcon,
+  StorageIcon,
+  PlayIcon,
+  RefreshIcon,
+  CrownIcon,
+  DoorIcon,
+  BanIcon,
+  CheckIcon
+} from './icons';
+
+// Provide a small set of version-aware command suggestions.
+const COMMAND_SETS = {
+  '1.8': [
+    'op <playername>',
+    'deop <playername>',
+    'whitelist add <playername>',
+    'whitelist remove <playername>',
+    'gamemode survival',
+    'gamemode creative',
+    'say Hello',
+    'kick <playername>'
+  ],
+  '1.12': [
+    'op <playername>',
+    'deop <playername>',
+    'whitelist add <playername>',
+    'whitelist remove <playername>',
+    'gamemode survival',
+    'gamemode creative',
+    'save-all',
+    'list',
+    'say Hello everyone',
+    'kick <playername> [reason]'
+  ],
+  'modern': [
+    'op <playername>',
+    'deop <playername>',
+    'whitelist add <playername>',
+    'whitelist remove <playername>',
+    'gamemode survival',
+    'gamemode creative',
+    'save-all',
+    'list',
+    'say Hello everyone',
+    'kick <playername> [reason]',
+    'weather clear',
+    'time set day'
+  ]
+};
+
+function getCommandsForVersion(v) {
+  if (!v) return COMMAND_SETS.modern;
+  if (v.startsWith('1.8')) return COMMAND_SETS['1.8'];
+  if (v.startsWith('1.12') || v.startsWith('1.13')) return COMMAND_SETS['1.12'];
+  return COMMAND_SETS.modern;
+}
 
 function randomIp() {
   return Array.from({ length: 4 }, () => Math.floor(Math.random() * 256)).join('.');
 }
 
-function ConsoleTab({ logs, onSend }) {
+function ConsoleTab({ logs, onSend, selectedVersion, domain, playAddr }) {
   const [cmd, setCmd] = useState('');
+  const [filtered, setFiltered] = useState([]);
+  const [copied, setCopied] = useState(false);
+
+  function update(v) {
+    setCmd(v);
+    if (!v) return setFiltered([]);
+    const q = v.toLowerCase();
+    const commands = getCommandsForVersion(selectedVersion);
+    setFiltered(commands.filter((c) => c.toLowerCase().includes(q)).slice(0, 6));
+  }
+
   return (
     <div className="tab-content">
+      <div className="console-header">
+        <div className="console-server">
+          <div className="console-server-name">{domain || 'yourusername.lighthost.serv.net'}</div>
+          <div className="console-server-ip">{playAddr || `play.${(domain||'yourusername.lighthost.serv.net').split('.')[0]}.shulkercraft.com`}</div>
+        </div>
+        <div className="console-header-actions">
+          <button className="btn small secondary" onClick={() => { try { navigator.clipboard.writeText(playAddr || `play.${(domain||'yourusername').split('.')[0]}.shulkercraft.com`); setCopied(true); setTimeout(()=>setCopied(false),1400);} catch(e){ alert('Copy failed'); } }}>
+            {copied ? 'Copied' : 'Copy IP'}
+          </button>
+        </div>
+      </div>
+
       <div className="log-lines console">
         {logs.length === 0 ? <div className="muted">No console output</div> : logs.map((l, i) => <div key={i} className="log">{l}</div>)}
       </div>
-      <form className="console-form" onSubmit={(e) => { e.preventDefault(); onSend(cmd); setCmd(''); }}>
-        <input value={cmd} onChange={(e)=>setCmd(e.target.value)} placeholder="Enter command" />
+      <form className="console-form" onSubmit={(e) => { e.preventDefault(); if (!cmd) return; onSend(cmd); setCmd(''); setFiltered([]); }}>
+        <input value={cmd} onChange={(e)=>update(e.target.value)} placeholder="Type a command..." />
         <button className="btn">Send</button>
+        {filtered.length > 0 && (
+          <div className="suggestions">
+            {filtered.map((s, i) => (
+              <div key={i} className="suggestion" onClick={() => { onSend(s); setCmd(''); setFiltered([]); }}>{s}</div>
+            ))}
+          </div>
+        )}
       </form>
     </div>
   );
@@ -578,6 +673,15 @@ export default function Panel({ serverId = 'demo' }) {
   const [status, setStatus] = useState('stopped');
   const [ip, setIp] = useState(null);
   const [port] = useState(25565);
+  const [selectedVersion, setSelectedVersion] = useState('1.20.1');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [toasts, setToasts] = useState([]);
+
+  function addToast(message, kind = 'info') {
+    const id = Date.now() + Math.random();
+    setToasts((t) => [...t, { id, message, kind }]);
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4200);
+  }
   const [logs, setLogs] = useState([]);
   const [files, setFiles] = useState([{ name: 'server.jar' }, { name: 'mods.zip' }]);
   const [pluginFiles, setPluginFiles] = useState([]);
@@ -588,6 +692,8 @@ export default function Panel({ serverId = 'demo' }) {
   const [memory, setMemory] = useState(3.2);
   const [players, setPlayers] = useState(4);
   const [storage, setStorage] = useState(12);
+  const [domain, setDomain] = useState('');
+  const [playAddr, setPlayAddr] = useState('');
   const pluginsRef = useRef([{ name: 'EssentialsX', version: '2.19.0', description: 'Essential server utilities' }, { name: 'WorldEdit', version: '7.2.12', description: 'In-game world editing' }]);
 
   useEffect(() => {
@@ -612,13 +718,8 @@ export default function Panel({ serverId = 'demo' }) {
     setLogs((s) => [...s, `${new Date().toLocaleTimeString()}: ${line}`]);
   }
 
-  function handleCreate(e) {
+  async function handleCreate(e) {
     if (e && e.preventDefault) e.preventDefault();
-    const version = window.prompt('Enter Minecraft server version to download (e.g. 1.20.1)');
-    if (version === null) {
-      appendLog('Start cancelled by user');
-      return;
-    }
     const accepted = window.confirm('Do you accept the EULA? Click OK to accept.');
     if (!accepted) {
       appendLog('EULA not accepted; start cancelled');
@@ -626,52 +727,76 @@ export default function Panel({ serverId = 'demo' }) {
     }
 
     setStatus('starting');
-    appendLog('EULA accepted');
-    appendLog(`Downloading Minecraft version ${version}...`);
+    appendLog(`EULA accepted`);
+    appendLog(`Downloading Minecraft version ${selectedVersion}...`);
     setIp(null);
 
-    let progress = 0;
-    const interval = setInterval(() => {
-      progress += 25;
-      appendLog(`Download ${progress}%`);
-      if (progress >= 100) {
-        clearInterval(interval);
-        const fileName = `minecraft-server-${version}.jar`;
-        setFiles((fs) => [...fs, { name: fileName }]);
-        appendLog(`Downloaded Minecraft version ${version} -> ${fileName}`);
-        setTimeout(() => {
-          const generatedIp = randomIp();
-          setIp(generatedIp);
-          setStatus('online');
-          appendLog(`Server is online at ${generatedIp}:${port}`);
-        }, 800);
-      }
-    }, 400);
+    setIsProcessing(true);
+    try {
+      const res = await startServer(serverId, selectedVersion);
+      appendLog(`Downloaded Minecraft version ${res.version}`);
+      const generatedIp = randomIp();
+      setIp(generatedIp);
+      // derive domain and play address from server name (username)
+      const user = (name || 'yourusername').toString().trim().toLowerCase().replace(/[^a-z0-9\-]/g, '') || 'yourusername';
+      setDomain(`${user}.lighthost.serv.net`);
+      setPlayAddr(`play.${user}.shulkercraft.com`);
+      setStatus(res.status || 'online');
+      appendLog(`Server is online at ${generatedIp}:${port}`);
+      setFiles((fs) => [...fs, { name: `minecraft-server-${res.version}.jar` }]);
+      addToast(`Server started (${res.version})`, 'success');
+    } catch (err) {
+      appendLog('Start failed');
+      setStatus('stopped');
+      addToast('Start failed', 'error');
+    } finally {
+      setIsProcessing(false);
+    }
   }
 
   function handleStop() {
     setStatus('stopping');
     appendLog('Stopping server...');
-    setTimeout(() => {
+    setIsProcessing(true);
+    stopServer(serverId).then(() => {
       setStatus('stopped');
       appendLog('Server stopped');
       setIp(null);
-    }, 600);
+      addToast('Server stopped', 'success');
+    }).catch(() => addToast('Stop failed', 'error')).finally(() => setIsProcessing(false));
   }
 
   function handleRestart() {
     if (status !== 'online') return;
     setStatus('starting');
     appendLog('Restarting server...');
-    setTimeout(() => {
+    setIsProcessing(true);
+    restartServer(serverId).then(() => {
       setStatus('online');
       appendLog('Server restarted');
-    }, 1200);
+      addToast('Server restarted', 'success');
+    }).catch(() => addToast('Restart failed', 'error')).finally(() => setIsProcessing(false));
   }
 
   function sendCommand(cmd) {
     appendLog(`> ${cmd}`);
-    appendLog(`Echo: ${cmd}`);
+    execCommand(serverId, cmd).then((res) => {
+      appendLog(res.output || '');
+      if (res && res.output) addToast(res.output, 'info');
+    }).catch(() => {
+      appendLog('Command failed');
+      addToast('Command failed', 'error');
+    });
+  }
+
+  function copyPlayAddr() {
+    if (!playAddr) return addToast('No address to copy', 'error');
+    try {
+      navigator.clipboard.writeText(playAddr);
+      addToast('Address copied', 'success');
+    } catch (e) {
+      addToast('Copy failed', 'error');
+    }
   }
 
   function downloadFile(file) {
@@ -756,120 +881,75 @@ export default function Panel({ serverId = 'demo' }) {
 
   return (
     <div className="panel-root">
+      <div className="toast-container">
+        {toasts.map((t) => (
+          <div key={t.id} className={`toast ${t.kind || 'info'}`}>{t.message}</div>
+        ))}
+      </div>
       <div className="panel-card">
-        <div className="panel-header">
-          <div className="header-left">
-            <div className="status-dot-wrapper">
-              <span className={`status-dot ${status}`}></span>
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <div className="server-title">{name}</div>
-                <div className="server-status-text">{status}</div>
-              </div>
+        <div className="panel-header top">
+          <div className="top-nav">
+            <button className={`nav-item ${tab==='console-general' ? 'active' : ''}`} onClick={() => setTab('console-general')}>
+              <TerminalIcon className="nav-icon" /><span className="label">Console</span>
+            </button>
+            <button className={`nav-item ${tab==='files-general' ? 'active' : ''}`} onClick={() => setTab('files-general')}>
+              <FolderIcon className="nav-icon" /><span className="label">Files</span>
+            </button>
+            <button className={`nav-item ${tab==='properties-general' ? 'active' : ''}`} onClick={() => setTab('properties-general')}>
+              <SlidersIcon className="nav-icon" /><span className="label">Properties</span>
+            </button>
+            <button className={`nav-item ${tab==='worlds' ? 'active' : ''}`} onClick={() => setTab('worlds')}>
+              <GlobeIcon className="nav-icon" /><span className="label">Worlds</span>
+            </button>
+            <button className={`nav-item ${tab==='addons-presets' ? 'active' : ''}`} onClick={() => setTab('addons-presets')}>
+              <PuzzleIcon className="nav-icon" /><span className="label">Addons</span>
+            </button>
+            <button className={`nav-item ${tab==='settings-general' ? 'active' : ''}`} onClick={() => setTab('settings-general')}>
+              <GearIcon className="nav-icon" /><span className="label">Settings</span>
+            </button>
+          </div>
+
+          <div className="header-controls">
+            <div className={`status-badge ${status==='online'?'online':''}`}>{status==='online'?'ONLINE':status.toUpperCase()}</div>
+            <div className="server-box">
+              <div className="server-domain">{domain || `${(name||'yourusername').toLowerCase()}.lighthost.serv.net`}</div>
+              <button className="copy-btn" onClick={copyPlayAddr} title="Copy play address">📋</button>
             </div>
-          </div>
-
-          <div className="header-center">
-            {status === 'starting' ? (
-              <button className="btn starting" disabled>Starting...</button>
-            ) : status === 'online' ? (
-              <>
-                <button className="btn danger" onClick={handleStop}>Stop</button>
-                <button className="btn" onClick={handleRestart}>Restart</button>
-              </>
-            ) : (
-              <button className="btn primary" onClick={handleCreate}>Start</button>
-            )}
-          </div>
-
-          <div className="header-right">
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                {tab === 'console-general' && (
-                  <div className="header-right-stats">
-                  </div>
-                )}
-                {ip ? <div>IP: <span className="code">{ip}:{port}</span></div> : <div className="muted">IP: —</div>}
-                <a className="btn secondary small" href="#/dashboard" title="Home">🏠</a>
-              </div>
+            <div className="action-buttons">
+              <button className="pill start" onClick={handleCreate}><span className="icon">▶️</span> START</button>
+              <button className="pill restart" onClick={handleRestart}><span className="icon">🔁</span> RESTART</button>
             </div>
           </div>
         </div>
 
         <div className="panel-layout">
-          <aside className="sidebar">
-            <div className="sidebar-brand">TLWTroo</div>
-            <div className="sidebar-user">Demo User</div>
-            <nav className="sidebar-nav">
-              <div className="nav-section">
-                <div className="nav-label">CONSOLE</div>
-                <button className={tab==='console-general'? 'active':''} onClick={()=>setTab('console-general')}>General</button>
-                <button className={tab==='console-players'? 'active':''} onClick={()=>setTab('console-players')}>Player Manager</button>
-              </div>
-
-              <div className="nav-section">
-                <div className="nav-label">FILES</div>
-                <button className={tab==='files-general'? 'active':''} onClick={()=>setTab('files-general')}>General</button>
-                <button className={tab==='files-instances'? 'active':''} onClick={()=>setTab('files-instances')}>Instances</button>
-                <button className={tab==='files-sftp'? 'active':''} onClick={()=>setTab('files-sftp')}>SFTP</button>
-                <button className={tab==='files-databases'? 'active':''} onClick={()=>setTab('files-databases')}>Databases</button>
-                <button className={tab==='files-plugins'? 'active':''} onClick={()=>setTab('files-plugins')}>Plugins (Import/Export)</button>
-                <button className={tab==='files-backups'? 'active':''} onClick={()=>setTab('files-backups')}>Backups</button>
-              </div>
-
-              <div className="nav-section">
-                <div className="nav-label">PROPERTIES</div>
-                <button className={tab==='properties-general'? 'active':''} onClick={()=>setTab('properties-general')}>General</button>
-                <button className={tab==='properties-world'? 'active':''} onClick={()=>setTab('properties-world')}>World</button>
-                <button className={tab==='properties-admin'? 'active':''} onClick={()=>setTab('properties-admin')}>Admin</button>
-              </div>
-
-              <div className="nav-section">
-                <div className="nav-label">WORLDS</div>
-                <button className={tab==='worlds'? 'active':''} onClick={()=>setTab('worlds')}>Worlds</button>
-              </div>
-
-              <div className="nav-section">
-                <div className="nav-label">ADDONS</div>
-                <button className={tab==='addons-presets'? 'active':''} onClick={()=>setTab('addons-presets')}>Presets</button>
-                <button className={tab==='addons-mods'? 'active':''} onClick={()=>setTab('addons-mods')}>Mods</button>
-                <button className={tab==='addons-datapacks'? 'active':''} onClick={()=>setTab('addons-datapacks')}>Datapacks</button>
-              </div>
-
-              <div className="nav-section">
-                <div className="nav-label">VERSION</div>
-                <button className={tab==='version-version'? 'active':''} onClick={()=>setTab('version-version')}>Version</button>
-                <button className={tab==='version-modpacks'? 'active':''} onClick={()=>setTab('version-modpacks')}>Modpacks</button>
-              </div>
-
-              <div className="nav-section">
-                <div className="nav-label">SETTINGS</div>
-                <button className={tab==='settings-general'? 'active':''} onClick={()=>setTab('settings-general')}>General</button>
-                <button className={tab==='settings-schedules'? 'active':''} onClick={()=>setTab('settings-schedules')}>Schedules</button>
-                <button className={tab==='settings-network'? 'active':''} onClick={()=>setTab('settings-network')}>Network</button>
-                <button className={tab==='settings-users'? 'active':''} onClick={()=>setTab('settings-users')}>Users</button>
-                <button className={tab==='settings-startup'? 'active':''} onClick={()=>setTab('settings-startup')}>Startup</button>
-                <button className={tab==='settings-activity'? 'active':''} onClick={()=>setTab('settings-activity')}>Activity</button>
-              </div>
-            </nav>
-          </aside>
-
-          <div className="main">
+          <div className="main fullwidth">
             <div className="panel-body console-container">
               {tab === 'console-general' && (
                 <div className="console-panel-wrapper console-two-col">
-                  <div className="console-main">
-                    <div className="muted">Console tools and quick info</div>
+                  <div className="console-main terminal-large">
+                    <ConsoleTab logs={logs} onSend={sendCommand} selectedVersion={selectedVersion} domain={domain} playAddr={playAddr} />
                   </div>
 
-                  <aside className="console-side">
-                    <div className="console-log-wrapper" style={{ position: 'relative' }}>
-                      <div style={{ position: 'absolute', top: 12, right: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, zIndex: 10 }}>
-                        <div className="stat-badge mini">CPU<span>{cpu}%</span></div>
-                        <div className="stat-badge mini">Memory<span>{memory} GB</span></div>
-                        <div className="stat-badge mini">Players<span>{players}</span></div>
-                        <div className="stat-badge mini">Storage<span>{storage} GB</span></div>
+                  <aside className="console-side gauges-column">
+                    <div className="gauges">
+                      <div className="gauge-card">
+                        <div className="gauge-label"><MicrochipIcon className="gauge-icon" /> CPU Usage</div>
+                        <div className="gauge-dial" style={{ ['--value']: cpu }} data-value={cpu}></div>
+                        <div className="gauge-value">{cpu}%</div>
                       </div>
-                      <ConsoleTab logs={logs} onSend={sendCommand} />
+
+                      <div className="gauge-card">
+                        <div className="gauge-label"><RamIcon className="gauge-icon" /> Memory Usage</div>
+                        <div className="gauge-dial" style={{ ['--value']: Math.min(100, Math.round((memory / 8) * 100)) }} data-value={memory}></div>
+                        <div className="gauge-value">{memory} GB</div>
+                      </div>
+
+                      <div className="gauge-card">
+                        <div className="gauge-label"><StorageIcon className="gauge-icon" /> Disk Usage</div>
+                        <div className="gauge-dial" style={{ ['--value']: storage }} data-value={storage}></div>
+                        <div className="gauge-value">{storage} GB</div>
+                      </div>
                     </div>
                   </aside>
                 </div>

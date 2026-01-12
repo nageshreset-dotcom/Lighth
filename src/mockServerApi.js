@@ -28,4 +28,59 @@ export async function deleteServer(id) {
   return { ok: true };
 }
 
-export default { fetchServers, createServer, deleteServer };
+export async function startServer(id, version = '1.20.1') {
+  await wait(600 + Math.random() * 500);
+  const s = servers.find((x) => x.id === id) || servers[0];
+  s.status = 'starting';
+  await wait(400 + Math.random() * 600);
+  s.status = 'online';
+  s.version = version;
+  return { ok: true, status: s.status, version };
+}
+
+export async function stopServer(id) {
+  await wait(300 + Math.random() * 400);
+  const s = servers.find((x) => x.id === id) || servers[0];
+  s.status = 'stopped';
+  return { ok: true, status: s.status };
+}
+
+export async function restartServer(id) {
+  await wait(300 + Math.random() * 300);
+  const s = servers.find((x) => x.id === id) || servers[0];
+  s.status = 'starting';
+  await wait(500 + Math.random() * 500);
+  s.status = 'online';
+  return { ok: true, status: s.status };
+}
+
+// Very small command executor simulating server responses for common Minecraft commands
+export async function execCommand(id, cmd) {
+  await wait(120 + Math.random() * 200);
+  const normalized = (cmd || '').trim();
+  if (!normalized) return { ok: false, output: 'No command entered' };
+
+  const parts = normalized.split(/\s+/);
+  const base = parts[0].toLowerCase();
+
+  if (base === 'op') {
+    return { ok: true, output: `Gave ${parts[1] || '<name>'} operator permissions` };
+  }
+  if (base === 'whitelist' && parts[1] === 'add') {
+    return { ok: true, output: `Added ${parts.slice(2).join(' ')} to whitelist` };
+  }
+  if (base === 'gamemode') {
+    return { ok: true, output: `Set gamemode to ${parts[1] || 'survival'}` };
+  }
+  if (base === 'save-all') {
+    return { ok: true, output: 'Saved the world (save-all)' };
+  }
+  if (base === 'list') {
+    return { ok: true, output: 'There are 3/20 players online: alice, bob, charlie' };
+  }
+
+  // generic echo for unknown commands
+  return { ok: true, output: `Executed: ${normalized}` };
+}
+
+export default { fetchServers, createServer, deleteServer, startServer, stopServer, restartServer, execCommand };

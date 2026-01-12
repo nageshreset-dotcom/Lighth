@@ -18,6 +18,7 @@ import {
   BanIcon,
   CheckIcon
 } from './icons';
+import { ClipboardIcon } from './icons';
 
 // Provide a small set of version-aware command suggestions.
 const COMMAND_SETS = {
@@ -70,7 +71,7 @@ function randomIp() {
   return Array.from({ length: 4 }, () => Math.floor(Math.random() * 256)).join('.');
 }
 
-function ConsoleTab({ logs, onSend, selectedVersion, domain, playAddr }) {
+function ConsoleTab({ logs, onSend, selectedVersion, domain, playAddr, onCopy }) {
   const [cmd, setCmd] = useState('');
   const [filtered, setFiltered] = useState([]);
   const [copied, setCopied] = useState(false);
@@ -91,7 +92,7 @@ function ConsoleTab({ logs, onSend, selectedVersion, domain, playAddr }) {
           <div className="console-server-ip">{playAddr || `play.${(domain||'yourusername.lighthost.serv.net').split('.')[0]}.shulkercraft.com`}</div>
         </div>
         <div className="console-header-actions">
-          <button className="btn small secondary" onClick={() => { try { navigator.clipboard.writeText(playAddr || `play.${(domain||'yourusername').split('.')[0]}.shulkercraft.com`); setCopied(true); setTimeout(()=>setCopied(false),1400);} catch(e){ alert('Copy failed'); } }}>
+          <button className="btn small secondary" onClick={() => { try { (onCopy || (() => {}))(); setCopied(true); setTimeout(()=>setCopied(false),1400);} catch(e){ (onCopy || (() => {}))(); } }}>
             {copied ? 'Copied' : 'Copy IP'}
           </button>
         </div>
@@ -913,7 +914,7 @@ export default function Panel({ serverId = 'demo' }) {
             <div className={`status-badge ${status==='online'?'online':''}`}>{status==='online'?'ONLINE':status.toUpperCase()}</div>
             <div className="server-box">
               <div className="server-domain">{domain || `${(name||'yourusername').toLowerCase()}.lighthost.serv.net`}</div>
-              <button className="copy-btn" onClick={copyPlayAddr} title="Copy play address">📋</button>
+              <button className="copy-btn" onClick={copyPlayAddr} title="Copy play address"><ClipboardIcon /></button>
             </div>
             <div className="action-buttons">
               <button className="pill start" onClick={handleCreate}><span className="icon">▶️</span> START</button>
@@ -928,7 +929,7 @@ export default function Panel({ serverId = 'demo' }) {
               {tab === 'console-general' && (
                 <div className="console-panel-wrapper console-two-col">
                   <div className="console-main terminal-large">
-                    <ConsoleTab logs={logs} onSend={sendCommand} selectedVersion={selectedVersion} domain={domain} playAddr={playAddr} />
+                    <ConsoleTab logs={logs} onSend={sendCommand} selectedVersion={selectedVersion} domain={domain} playAddr={playAddr} onCopy={copyPlayAddr} />
                   </div>
 
                   <aside className="console-side gauges-column">
